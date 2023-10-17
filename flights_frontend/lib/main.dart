@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flights_frontend/widgets/flight_tooltip.dart';
+import 'package:flights_frontend/widgets/flight_list_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
 import 'services/flight_service.dart';
 import 'models/airline_flight.dart';
@@ -32,6 +32,7 @@ class MyMap extends StatefulWidget {
   const MyMap({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   _MyMapState createState() => _MyMapState();
 }
 
@@ -41,6 +42,9 @@ class _MyMapState extends State<MyMap> {
   late AirportService airportService;
   List<Airport> airports = [];
   late Timer timer;
+
+  OverlayEntry? tooltipOverlay;
+  OverlayEntry? currentOverlayEntry;
 
   @override
   void initState() {
@@ -59,12 +63,6 @@ class _MyMapState extends State<MyMap> {
     timer = Timer.periodic(const Duration(minutes: 2), (timer) => fetchData());
   }
 
-  @override
-  void dispose() {
-    timer.cancel();
-    super.dispose();
-  }
-
   Future<void> fetchData() async {
     try {
       List<AirlineFlight> newFlights = await flightService.fetchFlights();
@@ -72,8 +70,60 @@ class _MyMapState extends State<MyMap> {
         flights = newFlights;
       });
     } catch (e) {
+      // ignore: avoid_print
       print("Error fetching flights: $e");
     }
+  }
+
+  @override
+  void dispose() {
+    if (currentOverlayEntry != null) {
+      currentOverlayEntry!.remove();
+      currentOverlayEntry = null;
+    }
+    timer.cancel();
+    super.dispose();
+  }
+
+  void showFlightTooltip(
+      BuildContext context, AirlineFlight flight, Offset tapPosition) {
+    if (currentOverlayEntry != null) {
+      currentOverlayEntry!.remove();
+      currentOverlayEntry = null;
+    }
+
+    currentOverlayEntry = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          GestureDetector(
+            onTap: () {
+              if (currentOverlayEntry != null) {
+                currentOverlayEntry!.remove();
+                currentOverlayEntry = null;
+              }
+            },
+            child: Container(
+              width: MediaQuery.of(context).size.width,
+              height: MediaQuery.of(context).size.height,
+              color: Colors.transparent,
+            ),
+          ),
+          Positioned(
+            top: tapPosition.dy - 50,
+            left: tapPosition.dx,
+            child: GestureDetector(
+              onTap: () {},
+              child: Material(
+                type: MaterialType.transparency,
+                child: FlightTooltip(flight: flight),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Overlay.of(context).insert(currentOverlayEntry!);
   }
 
   @override
@@ -81,8 +131,17 @@ class _MyMapState extends State<MyMap> {
     if (flights.isEmpty) {
       return const CircularProgressIndicator();
     } else {
-      return Center(
-        child: flutterMapMethod(context),
+      return Row(
+        children: [
+          Expanded(
+            flex: 8,
+            child: flutterMapMethod(context),
+          ),
+          Expanded(
+            flex: 2,
+            child: FlightListWidget(flights: flights),
+          ),
+        ],
       );
     }
   }
@@ -120,20 +179,13 @@ class _MyMapState extends State<MyMap> {
         return Marker(
           point: LatLng(flight.lat!, flight.lng!),
           child: GestureDetector(
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (context) {
-                  return Dialog(
-                    child: FlightTooltip(flight: flight),
-                  );
-                },
-              );
+            onTapDown: (details) {
+              showFlightTooltip(context, flight, details.globalPosition);
             },
             child: Transform.rotate(
               angle: flight.dir * (math.pi / 180),
-              child: SvgPicture.asset(
-                'assets/flight.svg',
+              child: Image.asset(
+                'assets/flight1.png',
                 width: 5,
                 height: 5,
               ),
